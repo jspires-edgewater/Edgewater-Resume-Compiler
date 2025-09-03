@@ -1,62 +1,134 @@
 <!doctype html>
-.card { border: 1px solid #ddd; padding: 16px; border-radius: 12px; }
-button { padding: 10px 16px; border-radius: 8px; border: 1px solid #ccc; cursor: pointer; }
-#status { margin-top: 12px; min-height: 24px; }
-</style>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Edgewater Resume Converter</title>
+  <style>
+    :root { --bg:#0b1020; --card:#141a2f; --text:#eef2ff; --muted:#9aa3b2; --accent:#6da8ff; }
+    * { box-sizing: border-box; }
+    body {
+      margin:0; background:linear-gradient(180deg,#0b1020 0%, #0d1326 100%);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color:var(--text);
+    }
+    .wrap { max-width: 880px; margin: 48px auto; padding: 0 20px; }
+    header { margin-bottom: 24px; }
+    h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: .3px; }
+    p.lead { color: var(--muted); margin: 0 0 16px; }
+    .card {
+      background:var(--card); border:1px solid rgba(255,255,255,.08);
+      border-radius: 16px; padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    input[type=file] {
+      display:block; padding: 10px; border:1px dashed rgba(255,255,255,.2);
+      border-radius:10px; color:var(--muted); background:rgba(255,255,255,.02);
+    }
+    button {
+      appearance:none; border:1px solid rgba(255,255,255,.15);
+      background:linear-gradient(180deg,#1e88ff,#1463d6);
+      color:white; padding:10px 16px; border-radius:10px; cursor:pointer; font-weight:600;
+    }
+    button[disabled] { opacity:.6; cursor:not-allowed; filter:grayscale(.2); }
+    .hint { color:var(--muted); font-size:13px; margin-top:10px; }
+    .drop {
+      margin-top:12px; padding:20px; border:2px dashed rgba(255,255,255,.2);
+      border-radius:12px; text-align:center; color:var(--muted); background:rgba(255,255,255,.03);
+    }
+    .drop.drag { border-color: var(--accent); color: var(--text); background:rgba(109,168,255,.08); }
+    .status { margin-top:12px; min-height:22px; font-size:14px; color: var(--muted); }
+    footer { margin-top: 20px; font-size: 12px; color: var(--muted); text-align:center; }
+    a { color:#9ec4ff; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+  </style>
 </head>
 <body>
-<header>
-<h1>Resume Converter</h1>
-<p>Upload a PDF or DOCX resume. We send back a standardized DOCX.</p>
-<p><strong>Note:</strong> Files are processed in memory and not stored.</p>
-</header>
+  <div class="wrap">
+    <header>
+      <h1>Edgewater Resume Converter</h1>
+      <p class="lead">Upload a PDF or DOCX. We’ll return a standardized DOCX in seconds. Files are processed in memory and not stored.</p>
+    </header>
 
+    <div class="card">
+      <div class="row">
+        <input id="file" type="file" accept=".pdf,.docx">
+        <button id="go">Convert</button>
+      </div>
+      <div id="drop" class="drop">or drop a file here</div>
+      <div class="hint">Allowed: PDF, DOCX · Max 20 MB</div>
+      <div id="status" class="status"></div>
+    </div>
 
-<div class="card">
-<input id="file" type="file" accept=".pdf,.docx" />
-<button id="go">Convert</button>
-<div id="status"></div>
-</div>
+    <footer>Having trouble? Make sure the page can reach the API. <a href="#" id="ping">Run health check</a></footer>
+  </div>
 
+  <script>
+    // <<< SET THIS ONCE >>>
+    // If you are using GitHub Pages + Render backend:
+    const API_URL = "https://edgewater-resume-compiler-1.onrender.com"; // <-- put your Render URL (no trailing slash)
 
-<script>
-// TODO: Replace with your Render URL once deployed (e.g., https://your-service.onrender.com)
-const API_URL = "https://edgewater-resume-compiler-1.onrender.com"; // <-- paste the Render URL here (no trailing slash) e.g. https://resume-converter.onrender.com
+    // If you switched to single-URL on Render, set API_URL = "" and the code will call same-origin (/convert).
+    // const API_URL = "";
 
+    const fileInput = document.getElementById('file');
+    const btn = document.getElementById('go');
+    const status = document.getElementById('status');
+    const drop = document.getElementById('drop');
 
-const fileInput = document.getElementById('file');
-const btn = document.getElementById('go');
-const status = document.getElementById('status');
+    function setStatus(msg, ok=false){ status.textContent = msg; status.style.color = ok ? '#b8ffb8' : '#9aa3b2'; }
 
+    async function convertFile(file){
+      if(!file){ setStatus('Choose a file first.'); return; }
+      if(!/\\.(pdf|docx)$/i.test(file.name)){ setStatus('Only PDF or DOCX are allowed.'); return; }
+      if(file.size > 20 * 1024 * 1024){ setStatus('File too large (max 20 MB).'); return; }
 
-function setStatus(msg) { status.textContent = msg; }
+      btn.disabled = true; setStatus('Uploading…');
+      const fd = new FormData(); fd.append('file', file, file.name);
 
+      try {
+        const base = API_URL || '';
+        const r = await fetch(base + '/convert', { method:'POST', body: fd });
+        if(!r.ok){
+          let err = 'Error ' + r.status;
+          try { const j = await r.json(); if(j.detail) err = j.detail; } catch {}
+          throw new Error(err);
+        }
+        setStatus('Converting…', true);
+        const blob = await r.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = file.name.replace(/\\.(pdf|docx)$/i,'') + '_STANDARD.docx';
+        a.click();
+        setStatus('Done. Your download should start now.', true);
+      } catch (e){
+        setStatus('Failed: ' + (e.message || e));
+      } finally {
+        btn.disabled = false;
+      }
+    }
 
-btn.addEventListener('click', async () => {
-const f = fileInput.files[0];
-if (!f) { setStatus('Choose a PDF or DOCX first.'); return; }
-if (!API_URL) { setStatus('Set API_URL in the page first.'); return; }
+    btn.addEventListener('click', () => convertFile(fileInput.files[0]));
+    document.getElementById('ping').addEventListener('click', async (e)=>{
+      e.preventDefault();
+      try{
+        const base = API_URL || '';
+        const r = await fetch(base + '/healthz', { cache:'no-store' });
+        const j = await r.json();
+        setStatus('Health: ' + JSON.stringify(j), true);
+      }catch(err){
+        setStatus('Health check failed. Is the API URL correct and service running?');
+      }
+    });
 
-
-setStatus('Uploading…');
-const fd = new FormData();
-fd.append('file', f, f.name);
-try {
-const r = await fetch(API_URL + '/convert', { method: 'POST', body: fd });
-if (!r.ok) {
-const err = await r.json().catch(() => ({}));
-throw new Error(err.detail || ('HTTP ' + r.status));
-}
-const blob = await r.blob();
-const a = document.createElement('a');
-a.href = URL.createObjectURL(blob);
-a.download = (f.name.replace(/\.(pdf|docx)$/i, '')) + '_STANDARD.docx';
-a.click();
-setStatus('Done. Your download should start.');
-} catch (e) {
-setStatus('Error: ' + (e.message || e.toString()));
-}
-});
-</script>
+    // Drag & drop
+    ;['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
+    ;['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e => {
+      const f = e.dataTransfer.files[0];
+      if(f){ convertFile(f); }
+    });
+  </script>
 </body>
 </html>
